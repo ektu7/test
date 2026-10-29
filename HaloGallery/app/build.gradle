@@ -22,7 +22,7 @@ android {
         }
         video {
             dimension 'experience'
-            applicationIdSuffix '.video'
+            applicationIdSuffix '.video21'
             resValue 'string', 'app_name', 'Halo Video'
         }
     }
