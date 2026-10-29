@@ -3,4 +3,14 @@
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
     <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <application>
+      <service android:name=".PlaybackService" android:exported="false"
+          android:stopWithTask="false" android:foregroundServiceType="mediaPlayback" />
+      <activity android:name=".VideoPlayerActivity"
+          android:supportsPictureInPicture="true"
+          android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation" />
+    </application>
 </manifest>
