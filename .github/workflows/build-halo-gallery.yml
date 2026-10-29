@@ -1,4 +1,4 @@
-name: Build and Test Halo Gallery APK
+name: Build Halo Gallery and Halo Video
 on:
   push:
     branches: [halo-gallery-apk-build]
@@ -6,7 +6,7 @@ on:
 permissions:
   contents: read
 jobs:
-  build-and-smoke-test:
+  build:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -18,14 +18,26 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.11.1'
-      - name: Build
-        run: gradle --no-daemon -p HaloGallery assembleDebug
+      - name: Compile both Android APKs
+        run: gradle --no-daemon -p HaloGallery :app:assembleGalleryDebug :app:assembleVideoDebug
+      - name: Verify APKs and package IDs
+        run: |
+          ls -lah HaloGallery/app/build/outputs/apk/{gallery,video}/debug/*.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose HaloGallery/app/build/outputs/apk/gallery/debug/app-gallery-debug.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose HaloGallery/app/build/outputs/apk/video/debug/app-video-debug.apk
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging HaloGallery/app/build/outputs/apk/gallery/debug/app-gallery-debug.apk | head -n 4
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging HaloGallery/app/build/outputs/apk/video/debug/app-video-debug.apk | head -n 4
       - uses: actions/upload-artifact@v4
         with:
-          name: HaloGallery-installable-debug-apk
-          path: HaloGallery/app/build/outputs/apk/debug/app-debug.apk
+          name: Halo-Gallery-2.0-APK
+          path: HaloGallery/app/build/outputs/apk/gallery/debug/app-gallery-debug.apk
           if-no-files-found: error
-      - name: Verify app launches on emulator
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Halo-Video-2.0-APK
+          path: HaloGallery/app/build/outputs/apk/video/debug/app-video-debug.apk
+          if-no-files-found: error
+      - name: Install and launch on Android emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
@@ -33,17 +45,11 @@ jobs:
           arch: x86_64
           profile: pixel_6
           script: |
-            adb install -r HaloGallery/app/build/outputs/apk/debug/app-debug.apk
-            adb shell pm grant com.halogallery.offline android.permission.READ_MEDIA_IMAGES
-            adb shell pm grant com.halogallery.offline android.permission.READ_MEDIA_VIDEO
-            adb shell am start -W -n com.halogallery.offline/.MainActivity
-            sleep 5
-            adb logcat -d -s AndroidRuntime:E ActivityTaskManager:E > halogallery-emulator-log.txt
-            cat halogallery-emulator-log.txt
-            adb shell pidof com.halogallery.offline
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: HaloGallery-test-log
-          path: halogallery-emulator-log.txt
-          if-no-files-found: ignore
+            adb install -r HaloGallery/app/build/outputs/apk/gallery/debug/app-gallery-debug.apk
+            adb install -r HaloGallery/app/build/outputs/apk/video/debug/app-video-debug.apk
+            adb shell am start -W -n com.halogallery.gallery/com.halogallery.offline.MainActivity
+            sleep 3
+            adb shell pidof com.halogallery.gallery
+            adb shell am start -W -n com.halogallery.video/com.halogallery.offline.MainActivity
+            sleep 3
+            adb shell pidof com.halogallery.video

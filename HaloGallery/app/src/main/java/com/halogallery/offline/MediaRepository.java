@@ -14,10 +14,10 @@ import java.util.List;
 final class MediaRepository {
     private MediaRepository() {}
 
-    static List<MediaItem> load(Context context) {
+    static List<MediaItem> load(Context context, boolean videosOnly) {
         List<MediaItem> all = new ArrayList<>();
-        query(context, MediaStore.Images.Media.EXTERNAL_CONTENT_URI, false, all);
-        query(context, MediaStore.Video.Media.EXTERNAL_CONTENT_URI, true, all);
+        if (videosOnly) query(context, MediaStore.Video.Media.EXTERNAL_CONTENT_URI, true, all);
+        else query(context, MediaStore.Images.Media.EXTERNAL_CONTENT_URI, false, all);
         Collections.sort(all, (a, b) -> Long.compare(b.when, a.when));
         return all;
     }

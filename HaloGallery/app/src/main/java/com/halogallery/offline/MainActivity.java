@@ -37,7 +37,10 @@ import java.util.concurrent.Executors;
 
 public final class MainActivity extends Activity {
     private static final int REQUEST_MEDIA = 200;
-    private static final String[] TABS = {"Pictures", "Albums", "Videos", "Favorites"};
+    private static final boolean VIDEO_APP = BuildConfig.FLAVOR.equals("video");
+    private static final String[] TABS = VIDEO_APP
+            ? new String[]{"Videos", "Folders", "Favorites"}
+            : new String[]{"Pictures", "Albums", "Favorites"};
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private List<MediaItem> all = new ArrayList<>();
     private ThumbnailLoader thumbnails;
@@ -77,8 +80,8 @@ public final class MainActivity extends Activity {
 
     private boolean hasAccess() {
         if (Build.VERSION.SDK_INT >= 33) {
-            boolean full = checkSelfPermission(Manifest.permission.READ_MEDIA_IMAGES) == PackageManager.PERMISSION_GRANTED
-                    || checkSelfPermission(Manifest.permission.READ_MEDIA_VIDEO) == PackageManager.PERMISSION_GRANTED;
+            boolean full = checkSelfPermission(VIDEO_APP ? Manifest.permission.READ_MEDIA_VIDEO
+                    : Manifest.permission.READ_MEDIA_IMAGES) == PackageManager.PERMISSION_GRANTED;
             if (Build.VERSION.SDK_INT >= 34) {
                 return full || checkSelfPermission(Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED)
                         == PackageManager.PERMISSION_GRANTED;
@@ -90,12 +93,12 @@ public final class MainActivity extends Activity {
 
     private void requestLibraryAccess() {
         if (Build.VERSION.SDK_INT >= 34) {
-            requestPermissions(new String[]{ Manifest.permission.READ_MEDIA_IMAGES,
-                Manifest.permission.READ_MEDIA_VIDEO,
+            requestPermissions(new String[]{ VIDEO_APP ? Manifest.permission.READ_MEDIA_VIDEO
+                : Manifest.permission.READ_MEDIA_IMAGES,
                 Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED }, REQUEST_MEDIA);
         } else if (Build.VERSION.SDK_INT >= 33) {
-            requestPermissions(new String[]{ Manifest.permission.READ_MEDIA_IMAGES,
-                Manifest.permission.READ_MEDIA_VIDEO }, REQUEST_MEDIA);
+            requestPermissions(new String[]{ VIDEO_APP ? Manifest.permission.READ_MEDIA_VIDEO
+                : Manifest.permission.READ_MEDIA_IMAGES }, REQUEST_MEDIA);
         } else {
             requestPermissions(new String[]{ Manifest.permission.READ_EXTERNAL_STORAGE }, REQUEST_MEDIA);
         }
@@ -128,7 +131,7 @@ public final class MainActivity extends Activity {
         LinearLayout heading = new LinearLayout(this);
         heading.setOrientation(LinearLayout.VERTICAL);
         mainBar.addView(heading, new LinearLayout.LayoutParams(0, -2, 1));
-        TextView title = Ui.text(this, "Gallery", 30, Ui.INK, true);
+        TextView title = Ui.text(this, VIDEO_APP ? "Halo Video" : "Halo Gallery", 30, Ui.INK, true);
         title.setLetterSpacing(-.025f);
         heading.addView(title);
         TextView desc = Ui.text(this, "Offline & private", 12, Ui.MUTED, false);
@@ -145,7 +148,7 @@ public final class MainActivity extends Activity {
         aboutButton.setContentDescription("About and privacy");
         aboutButton.setOnClickListener(v -> new AlertDialog.Builder(this)
             .setTitle("Your private gallery")
-            .setMessage("Halo Gallery works offline. It has no internet permission, no ads, no tracking, "
+            .setMessage("This app works offline. It has no internet permission, no ads, no tracking, "
                 + "and cannot delete or edit your original photos or videos. Favorites are stored "
                 + "only on this phone. You control which photos it may access through Android. "
                 + "Some Samsung-only features such as AI editing and cloud sync are not included.")
@@ -155,7 +158,7 @@ public final class MainActivity extends Activity {
         search = new EditText(this);
         search.setSingleLine(true);
         search.setTextSize(15);
-        search.setHint("Search names or albums");
+        search.setHint(VIDEO_APP ? "Search videos or folders" : "Search photos or albums");
         search.setHintTextColor(Ui.MUTED);
         search.setBackground(Ui.bg(Color.WHITE, 18, this));
         Ui.pad(search, this, 16, 4, 14, 4);
@@ -185,7 +188,7 @@ public final class MainActivity extends Activity {
         root.addView(section, new LinearLayout.LayoutParams(-1, Ui.dp(this, 58)));
         sectionTitle = Ui.text(this, "Recent", 19, Ui.INK, true);
         section.addView(sectionTitle, new LinearLayout.LayoutParams(0, -1, 1));
-        TextView reset = Ui.text(this, "All photos", 13, Ui.ACCENT, true);
+        TextView reset = Ui.text(this, VIDEO_APP ? "All videos" : "All photos", 13, Ui.ACCENT, true);
         reset.setOnClickListener(v -> { albumId = null; albumLabel = null; tab = 0; rebuildTabs(); renderContent(); });
         section.addView(reset);
         reset.setTag("reset");
@@ -236,7 +239,7 @@ public final class MainActivity extends Activity {
         loading = true;
         showStatus("Loading your library…", false);
         worker.submit(() -> {
-            List<MediaItem> result = MediaRepository.load(getApplicationContext());
+            List<MediaItem> result = MediaRepository.load(getApplicationContext(), VIDEO_APP);
             runOnUiThread(() -> {
                 if (isFinishing() || isDestroyed() || current != generation) return;
                 loading = false;
@@ -257,19 +260,20 @@ public final class MainActivity extends Activity {
         TextView icon = Ui.text(this, "▧", 70, Ui.ACCENT, true);
         icon.setGravity(Gravity.CENTER);
         panel.addView(icon);
-        TextView h = Ui.text(this, "Your moments, privately", 23, Ui.INK, true);
+        TextView h = Ui.text(this, VIDEO_APP ? "Your videos, privately" : "Your moments, privately", 23, Ui.INK, true);
         h.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams hp = new LinearLayout.LayoutParams(-1,-2);
         hp.topMargin = Ui.dp(this, 20);
         panel.addView(h, hp);
         TextView p = Ui.text(this,
-            "Choose which photos and videos Halo may see. Nothing is uploaded or modified.",
+            VIDEO_APP ? "Choose the videos this player may see. Nothing is uploaded or changed."
+                : "Choose the photos this gallery may see. Nothing is uploaded or changed.",
             15, Ui.MUTED, false);
         p.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams pp = new LinearLayout.LayoutParams(-1,-2);
         pp.topMargin = Ui.dp(this, 12);
         panel.addView(p, pp);
-        TextView button = Ui.text(this, "Choose photos & videos", 16, Color.WHITE, true);
+        TextView button = Ui.text(this, VIDEO_APP ? "Choose videos" : "Choose photos", 16, Color.WHITE, true);
         button.setGravity(Gravity.CENTER);
         button.setBackground(Ui.bg(Ui.ACCENT, 18, this));
         LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(-1, Ui.dp(this, 55));
@@ -289,7 +293,7 @@ public final class MainActivity extends Activity {
         t.setGravity(Gravity.CENTER);
         center.addView(t);
         if (withAccessButton) {
-            TextView change = Ui.text(this, "Choose more photos", 14, Ui.ACCENT, true);
+            TextView change = Ui.text(this, VIDEO_APP ? "Choose more videos" : "Choose more photos", 14, Ui.ACCENT, true);
             change.setGravity(Gravity.CENTER);
             LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1, Ui.dp(this, 54));
             p.topMargin = Ui.dp(this, 12);
@@ -301,8 +305,8 @@ public final class MainActivity extends Activity {
     private List<MediaItem> visible() {
         List<MediaItem> selected = new ArrayList<>();
         for (MediaItem item : all) {
-            if (tab == 2 && !item.isVideo) continue;
-            if (tab == 3 && !Favorites.contains(this, item.key())) continue;
+            if (item.isVideo != VIDEO_APP) continue;
+            if (tab == 2 && !Favorites.contains(this, item.key())) continue;
             if (albumId != null && !albumId.equals(item.bucketId)) continue;
             if (!filter.isEmpty() && !item.title.toLowerCase(Locale.ROOT).contains(filter)
                 && !item.bucketName.toLowerCase(Locale.ROOT).contains(filter)) continue;
@@ -314,19 +318,20 @@ public final class MainActivity extends Activity {
     private void renderContent() {
         if (content == null || loading || !hasAccess()) return;
         if (tab == 1) {
-            sectionTitle.setText("Albums");
+            sectionTitle.setText(VIDEO_APP ? "Folders" : "Albums");
             showAlbums();
             return;
         }
         List<MediaItem> items = visible();
         sectionTitle.setText(albumLabel != null ? albumLabel + "  ·  " + items.size()
-            : tab == 2 ? "Videos  ·  " + items.size()
-            : tab == 3 ? "Favorites  ·  " + items.size()
+            : tab == 2 ? "Favorites  ·  " + items.size()
+            : VIDEO_APP ? "All videos  ·  " + items.size()
             : "Recent  ·  " + items.size());
         if (items.isEmpty()) {
-            showStatus(all.isEmpty() ? "No photos found. You can change media access in Android."
-                    : tab == 3 ? "Tap ♡ on a photo or video to save it here."
-                    : "No matching photos or videos.", true);
+            showStatus(all.isEmpty() ? (VIDEO_APP ? "No videos found. You can change video access in Android."
+                         : "No photos found. You can change photo access in Android.")
+                    : tab == 2 ? "Tap ♡ on an item to save it here."
+                    : VIDEO_APP ? "No matching videos." : "No matching photos.", true);
             return;
         }
         content.removeAllViews();
@@ -369,9 +374,9 @@ public final class MainActivity extends Activity {
             album.count++;
         }
         List<Album> albums = new ArrayList<>(grouped.values());
-        sectionTitle.setText("Albums  ·  " + albums.size());
+        sectionTitle.setText((VIDEO_APP ? "Folders  ·  " : "Albums  ·  ") + albums.size());
         if (albums.isEmpty()) {
-            showStatus("No albums found.", true);
+            showStatus(VIDEO_APP ? "No video folders found." : "No albums found.", true);
             return;
         }
         content.removeAllViews();
