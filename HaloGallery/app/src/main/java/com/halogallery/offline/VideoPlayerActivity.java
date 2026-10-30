@@ -133,6 +133,8 @@ public final class VideoPlayerActivity extends Activity {
         Intent start = new Intent(this, PlaybackService.class);
         start.setAction(PlaybackService.ACTION_START).setData(uri)
                 .putExtra(PlaybackService.EXTRA_TITLE, currentTitle);
+        start.setClipData(ClipData.newUri(getContentResolver(), "Video", uri));
+        start.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
         try { startForegroundService(start); }
         catch (RuntimeException ex) {
             Toast.makeText(this, "Video playback could not start", Toast.LENGTH_LONG).show();
@@ -354,9 +356,19 @@ public final class VideoPlayerActivity extends Activity {
         // Visible media list is retained for within-app navigation. Also load all videos
         // when opened from a separate Gallery process with an ACTION_VIEW intent.
         final Uri opened = uri;
+        final ArrayList<String> transferredUris = getIntent().getStringArrayListExtra("halo_playlist_uris");
+        final ArrayList<String> transferredTitles = getIntent().getStringArrayListExtra("halo_playlist_titles");
         libraryWorker.submit(() -> {
             List<MediaItem> candidates = new ArrayList<>();
-            if (!SelectionSession.videos.isEmpty()) candidates.addAll(SelectionSession.videos);
+            if (transferredUris != null && !transferredUris.isEmpty()) {
+                for (int i=0; i<transferredUris.size(); i++) {
+                    Uri each = Uri.parse(transferredUris.get(i));
+                    String name = transferredTitles != null && i < transferredTitles.size()
+                            ? transferredTitles.get(i) : "Video";
+                    candidates.add(new MediaItem(each, name, "", "", true, 0L, 0L));
+                }
+            }
+            if (candidates.isEmpty() && !SelectionSession.videos.isEmpty()) candidates.addAll(SelectionSession.videos);
             if (candidates.isEmpty() || !containsVideo(candidates, opened))
                 candidates = MediaRepository.load(getApplicationContext(), true);
             List<MediaItem> result = candidates;

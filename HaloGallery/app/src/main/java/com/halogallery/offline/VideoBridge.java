@@ -6,6 +6,7 @@ import android.content.ClipData;
 import android.content.Intent;
 import android.net.Uri;
 import android.widget.Toast;
+import java.util.ArrayList;
 
 /** Open a chosen Gallery video in the separately installed Halo Video app. */
 final class VideoBridge {
@@ -16,7 +17,21 @@ final class VideoBridge {
         open.setDataAndType(uri, "video/*");
         open.setPackage(VIDEO_PACKAGE);
         open.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-        open.setClipData(ClipData.newUri(activity.getContentResolver(), "Video", uri));
+        // Transfer the Gallery's visible video sequence and URI grants, so Next/Previous
+        // work immediately even when the user hasn't opened Halo Video before.
+        ArrayList<String> playlistUris = new ArrayList<>();
+        ArrayList<String> playlistTitles = new ArrayList<>();
+        ClipData grants = ClipData.newUri(activity.getContentResolver(), "Video", uri);
+        for (MediaItem video : SelectionSession.videos) {
+            if (playlistUris.size() >= 80) break;
+            if (!video.isVideo) continue;
+            playlistUris.add(video.uri.toString());
+            playlistTitles.add(video.title == null ? "Video" : video.title);
+            if (!video.uri.equals(uri)) grants.addItem(new ClipData.Item(video.uri));
+        }
+        open.setClipData(grants);
+        open.putStringArrayListExtra("halo_playlist_uris", playlistUris);
+        open.putStringArrayListExtra("halo_playlist_titles", playlistTitles);
         open.putExtra("title", title);
         try {
             activity.startActivity(open);
