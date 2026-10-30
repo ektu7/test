@@ -1,12 +1,30 @@
-# Halo Gallery + Halo Video — independent Android apps (v2.0.0)
+# Halo Gallery + Halo Video — version 3.0.0 (Android)
 
-Two independent apps built from one offline Android source tree, with no ads, tracking, internet access, or delete permission.
+Two standalone, **original Samsung-inspired** Android apps: Gallery package `com.halogallery.gallery30`, Video package `com.halogallery.video31`. Both can be installed alongside v2 versions (package IDs intentionally different to avoid debug signing conflicts).
 
-- **Halo Gallery** (`com.halogallery.gallery`): Pictures, Albums, Favorites, photo viewing/zoom and search.
-- **Halo Video** (`com.halogallery.video`): Videos, Folders, Favorites, playback/seek/skip/speed and sharing.
+## Gallery
+- Timeline of photos **and videos**, albums, video tab, favorites, search, share, zoom.
+- Tap a video for preview, then **Open in Video Player**; 3-dot menu has the same action.
+- Gallery menu -> Settings -> toggle **Open videos directly in Halo Video**.
+- If Halo Video isn't installed, dialog offers the Android app chooser.
+- Media stays on device. Read-only media permissions.
 
-Original Samsung-inspired designs, **not Samsung apps**. Proprietary Samsung AI, cloud sync, editor, codecs and feature parity are not included.
+## Video Player
+- Accepts `ACTION_VIEW` of `content://` local video URIs from Gallery or other compatible apps.
+- Previous/next video buttons; +/-10 seconds; drag the native seek bar to any timestamp.
+- Swipe horizontally across video to preview and seek a timestamp (width of screen = 90 sec); double-tap left/right = +/-10 sec.
+- Vertical swipe left: screen brightness; vertical swipe right: music volume.
+- Playback speed, repeat, background-audio service/notification, picture in picture, rotation, sharing and favorites.
+- Supports local file formats decoded by the device's Android MediaPlayer.
 
-Build in Android Studio or run `gradle -p . assembleGalleryDebug assembleVideoDebug`.
-Generated APK files: `app/build/outputs/apk/gallery/debug/app-gallery-debug.apk`, `app/build/outputs/apk/video/debug/app-video-debug.apk`.
-Apps use distinct IDs and may be installed together. Since these are new IDs, favorites from older Halo Gallery do not transfer automatically.
+## Build
+
+Using JDK 17, Android SDK 35, Gradle 8.11.1:
+
+```sh
+gradle -p HaloGallery :app:assembleGalleryDebug :app:assembleVideoDebug
+```
+
+APKs are generated under `HaloGallery/app/build/outputs/apk/gallery/debug/` and `.../video/debug/`.
+
+Neither app is a Samsung proprietary binary; features requiring Samsung libraries, AI, Cloud or their editor are not included.

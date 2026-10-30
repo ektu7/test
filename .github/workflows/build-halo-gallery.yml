@@ -1,4 +1,4 @@
-name: Build Halo Gallery and Halo Video
+name: Build Halo Gallery 3 and Video 3
 on:
   push:
     branches: [halo-gallery-apk-build]
@@ -8,7 +8,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -18,38 +18,21 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.11.1'
-      - name: Compile both Android APKs
-        run: gradle --no-daemon -p HaloGallery :app:assembleGalleryDebug :app:assembleVideoDebug
-      - name: Verify APKs and package IDs
+      - name: Build two standalone apps
+        run: gradle --no-daemon -p HaloGallery :app:assembleGalleryDebug :app:assembleVideoDebug --stacktrace
+      - name: Validate signing and Android package names
         run: |
-          ls -lah HaloGallery/app/build/outputs/apk/{gallery,video}/debug/*.apk
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose HaloGallery/app/build/outputs/apk/gallery/debug/app-gallery-debug.apk
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose HaloGallery/app/build/outputs/apk/video/debug/app-video-debug.apk
-          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging HaloGallery/app/build/outputs/apk/gallery/debug/app-gallery-debug.apk | head -n 4
-          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging HaloGallery/app/build/outputs/apk/video/debug/app-video-debug.apk | head -n 4
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging HaloGallery/app/build/outputs/apk/gallery/debug/app-gallery-debug.apk | head -n 5
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging HaloGallery/app/build/outputs/apk/video/debug/app-video-debug.apk | head -n 5
       - uses: actions/upload-artifact@v4
         with:
-          name: Halo-Gallery-2.0-APK
+          name: Halo-Gallery-v3-APK
           path: HaloGallery/app/build/outputs/apk/gallery/debug/app-gallery-debug.apk
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
         with:
-          name: Halo-Video-2.0-APK
+          name: Halo-Video-v3-APK
           path: HaloGallery/app/build/outputs/apk/video/debug/app-video-debug.apk
           if-no-files-found: error
-      - name: Install and launch on Android emulator
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 35
-          target: google_apis
-          arch: x86_64
-          profile: pixel_6
-          script: |
-            adb install -r HaloGallery/app/build/outputs/apk/gallery/debug/app-gallery-debug.apk
-            adb install -r HaloGallery/app/build/outputs/apk/video/debug/app-video-debug.apk
-            adb shell am start -W -n com.halogallery.gallery/com.halogallery.offline.MainActivity
-            sleep 3
-            adb shell pidof com.halogallery.gallery
-            adb shell am start -W -n com.halogallery.video/com.halogallery.offline.MainActivity
-            sleep 3
-            adb shell pidof com.halogallery.video

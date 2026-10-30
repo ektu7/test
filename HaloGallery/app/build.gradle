@@ -10,19 +10,19 @@ android {
         applicationId 'com.halogallery'
         minSdk 29
         targetSdk 35
-        versionCode 4
-        versionName '2.1.0'
+        versionCode 6
+        versionName '3.0.0'
     }
     flavorDimensions 'experience'
     productFlavors {
         gallery {
             dimension 'experience'
-            applicationIdSuffix '.gallery'
+            applicationIdSuffix '.gallery30'
             resValue 'string', 'app_name', 'Halo Gallery'
         }
         video {
             dimension 'experience'
-            applicationIdSuffix '.video21'
+            applicationIdSuffix '.video31'
             resValue 'string', 'app_name', 'Halo Video'
         }
     }

@@ -40,7 +40,7 @@ public final class MainActivity extends Activity {
     private static final boolean VIDEO_APP = BuildConfig.FLAVOR.equals("video");
     private static final String[] TABS = VIDEO_APP
             ? new String[]{"Videos", "Folders", "Favorites"}
-            : new String[]{"Pictures", "Albums", "Favorites"};
+            : new String[]{"Pictures", "Albums", "Videos", "Favorites"};
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private List<MediaItem> all = new ArrayList<>();
     private ThumbnailLoader thumbnails;
@@ -80,8 +80,10 @@ public final class MainActivity extends Activity {
 
     private boolean hasAccess() {
         if (Build.VERSION.SDK_INT >= 33) {
-            boolean full = checkSelfPermission(VIDEO_APP ? Manifest.permission.READ_MEDIA_VIDEO
-                    : Manifest.permission.READ_MEDIA_IMAGES) == PackageManager.PERMISSION_GRANTED;
+            boolean full = (checkSelfPermission(Manifest.permission.READ_MEDIA_VIDEO)
+                    == PackageManager.PERMISSION_GRANTED)
+                    || (!VIDEO_APP && checkSelfPermission(Manifest.permission.READ_MEDIA_IMAGES)
+                    == PackageManager.PERMISSION_GRANTED);
             if (Build.VERSION.SDK_INT >= 34) {
                 return full || checkSelfPermission(Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED)
                         == PackageManager.PERMISSION_GRANTED;
@@ -93,12 +95,14 @@ public final class MainActivity extends Activity {
 
     private void requestLibraryAccess() {
         if (Build.VERSION.SDK_INT >= 34) {
-            requestPermissions(new String[]{ VIDEO_APP ? Manifest.permission.READ_MEDIA_VIDEO
-                : Manifest.permission.READ_MEDIA_IMAGES,
+            requestPermissions(VIDEO_APP ? new String[]{ Manifest.permission.READ_MEDIA_VIDEO,
+                Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED } : new String[]{
+                Manifest.permission.READ_MEDIA_IMAGES, Manifest.permission.READ_MEDIA_VIDEO,
                 Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED }, REQUEST_MEDIA);
         } else if (Build.VERSION.SDK_INT >= 33) {
-            requestPermissions(new String[]{ VIDEO_APP ? Manifest.permission.READ_MEDIA_VIDEO
-                : Manifest.permission.READ_MEDIA_IMAGES }, REQUEST_MEDIA);
+            requestPermissions(VIDEO_APP ? new String[]{ Manifest.permission.READ_MEDIA_VIDEO }
+                    : new String[]{ Manifest.permission.READ_MEDIA_IMAGES,
+                        Manifest.permission.READ_MEDIA_VIDEO }, REQUEST_MEDIA);
         } else {
             requestPermissions(new String[]{ Manifest.permission.READ_EXTERNAL_STORAGE }, REQUEST_MEDIA);
         }
@@ -146,14 +150,20 @@ public final class MainActivity extends Activity {
         TextView aboutButton = Ui.action(this, "⋮", 24);
         mainBar.addView(aboutButton, new LinearLayout.LayoutParams(Ui.dp(this, 42), Ui.dp(this, 42)));
         aboutButton.setContentDescription("About and privacy");
-        aboutButton.setOnClickListener(v -> new AlertDialog.Builder(this)
-            .setTitle("Your private gallery")
-            .setMessage("This app works offline. It has no internet permission, no ads, no tracking, "
-                + "and cannot delete or edit your original photos or videos. Favorites are stored "
-                + "only on this phone. You control which photos it may access through Android. "
-                + "Some Samsung-only features such as AI editing and cloud sync are not included.")
-            .setNegativeButton("Close", null)
-            .setPositiveButton("Change access", (dialog, which) -> requestLibraryAccess()).show());
+        aboutButton.setOnClickListener(v -> {
+            if (!VIDEO_APP) {
+                final boolean auto = getPreferences(MODE_PRIVATE).getBoolean("auto_video", false);
+                new AlertDialog.Builder(this).setTitle("Gallery settings")
+                        .setItems(new String[]{auto ? "✓ Open videos directly in Halo Video" : "Open videos directly in Halo Video",
+                            "Change photo and video access", "About this app"}, (d, which) -> {
+                            if (which == 0) {
+                                getPreferences(MODE_PRIVATE).edit().putBoolean("auto_video", !auto).apply();
+                                android.widget.Toast.makeText(this, !auto ? "Videos now open in Halo Video" : "Video preview enabled", android.widget.Toast.LENGTH_SHORT).show();
+                            } else if (which == 1) requestLibraryAccess();
+                            else showAbout();
+                        }).show();
+            } else showAbout();
+        });
 
         search = new EditText(this);
         search.setSingleLine(true);
@@ -196,6 +206,13 @@ public final class MainActivity extends Activity {
         content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
         root.addView(content, new LinearLayout.LayoutParams(-1, 0, 1));
+    }
+
+    private void showAbout() {
+        new AlertDialog.Builder(this).setTitle("Halo · Offline & private")
+                .setMessage("Your media stays on your phone. No internet permission, ads, tracking or deleting originals. "
+                        + "Samsung AI editing and Samsung Cloud are not included.")
+                .setPositiveButton("OK", null).show();
     }
 
     private void toggleSearch() {
@@ -305,8 +322,9 @@ public final class MainActivity extends Activity {
     private List<MediaItem> visible() {
         List<MediaItem> selected = new ArrayList<>();
         for (MediaItem item : all) {
-            if (item.isVideo != VIDEO_APP) continue;
-            if (tab == 2 && !Favorites.contains(this, item.key())) continue;
+            if (VIDEO_APP && !item.isVideo) continue;
+            if (!VIDEO_APP && tab == 2 && !item.isVideo) continue;
+            if ((VIDEO_APP ? tab == 2 : tab == 3) && !Favorites.contains(this, item.key())) continue;
             if (albumId != null && !albumId.equals(item.bucketId)) continue;
             if (!filter.isEmpty() && !item.title.toLowerCase(Locale.ROOT).contains(filter)
                 && !item.bucketName.toLowerCase(Locale.ROOT).contains(filter)) continue;
@@ -324,13 +342,14 @@ public final class MainActivity extends Activity {
         }
         List<MediaItem> items = visible();
         sectionTitle.setText(albumLabel != null ? albumLabel + "  ·  " + items.size()
-            : tab == 2 ? "Favorites  ·  " + items.size()
+            : (VIDEO_APP ? tab == 2 : tab == 3) ? "Favorites  ·  " + items.size()
+            : !VIDEO_APP && tab == 2 ? "Videos  ·  " + items.size()
             : VIDEO_APP ? "All videos  ·  " + items.size()
             : "Recent  ·  " + items.size());
         if (items.isEmpty()) {
             showStatus(all.isEmpty() ? (VIDEO_APP ? "No videos found. You can change video access in Android."
                          : "No photos found. You can change photo access in Android.")
-                    : tab == 2 ? "Tap ♡ on an item to save it here."
+                    : (VIDEO_APP ? tab == 2 : tab == 3) ? "Tap ♡ on an item to save it here."
                     : VIDEO_APP ? "No matching videos." : "No matching photos.", true);
             return;
         }
@@ -355,6 +374,16 @@ public final class MainActivity extends Activity {
 
     private void openItem(MediaItem item, List<MediaItem> visibleItems) {
         SelectionSession.set(visibleItems);
+        if (item.isVideo && !VIDEO_APP) {
+            if (getPreferences(MODE_PRIVATE).getBoolean("auto_video", false)) {
+                VideoBridge.open(this, item.uri, item.title);
+            } else {
+                Intent preview = new Intent(this, GalleryVideoPreviewActivity.class).setData(item.uri);
+                preview.putExtra("title", item.title);
+                startActivity(preview);
+            }
+            return;
+        }
         Intent intent = new Intent(this, item.isVideo ? VideoPlayerActivity.class : ViewerActivity.class);
         intent.setData(item.uri);
         intent.putExtra("title", item.title);

@@ -10,7 +10,16 @@
       <service android:name=".PlaybackService" android:exported="false"
           android:stopWithTask="false" android:foregroundServiceType="mediaPlayback" />
       <activity android:name=".VideoPlayerActivity"
+          android:exported="true"
           android:supportsPictureInPicture="true"
-          android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation" />
+          android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation">
+        <intent-filter>
+          <action android:name="android.intent.action.VIEW" />
+          <category android:name="android.intent.category.DEFAULT" />
+          <category android:name="android.intent.category.BROWSABLE" />
+          <data android:scheme="content" android:mimeType="video/*" />
+          <data android:scheme="file" android:mimeType="video/*" />
+        </intent-filter>
+      </activity>
     </application>
 </manifest>

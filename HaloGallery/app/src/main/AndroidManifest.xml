@@ -10,6 +10,7 @@
         android:usesCleartextTraffic="false"
         android:supportsRtl="true">
         <activity android:name=".ViewerActivity" android:exported="false" />
+        <activity android:name=".GalleryVideoPreviewActivity" android:exported="false" />
         <activity android:name=".VideoPlayerActivity" android:exported="false" />
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>

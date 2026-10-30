@@ -23,6 +23,12 @@ import android.view.MotionEvent;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.View;
+import android.media.AudioManager;
+import android.view.WindowManager;
+import java.util.List;
+import java.util.ArrayList;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.PopupMenu;
@@ -37,10 +43,19 @@ public final class VideoPlayerActivity extends Activity {
     private boolean surfaceReady;
     private SurfaceView surface;
     private SeekBar scrubber;
-    private TextView play, positionLabel, lengthLabel, speed, favorite, repeat, status;
+    private TextView play, positionLabel, lengthLabel, speed, favorite, repeat, status, titleView, gestureHint;
     private LinearLayout header, controls;
     private Uri uri;
+    private String currentTitle;
     private boolean tracking;
+    private final ExecutorService libraryWorker = Executors.newSingleThreadExecutor();
+    private final List<MediaItem> playlist = new ArrayList<>();
+    private int playlistIndex = -1;
+    private int gestureMode = 0; // 0 none, 1 horizontal seek, 2 brightness, 3 volume
+    private int dragStartPosition, dragTargetPosition, initialVolume, maxVolume;
+    private float initialBrightness;
+    private AudioManager audio;
+    private boolean scrubbingGesture;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final Runnable ticker = new Runnable() {
         @Override public void run() {
@@ -85,9 +100,13 @@ public final class VideoPlayerActivity extends Activity {
         super.onCreate(savedState);
         uri = getIntent().getData();
         if (uri == null) { finish(); return; }
+        currentTitle = getIntent().getStringExtra("title");
+        if (currentTitle == null || currentTitle.isEmpty()) currentTitle = uri.getLastPathSegment() == null ? "Video" : uri.getLastPathSegment();
+        audio = (AudioManager)getSystemService(Context.AUDIO_SERVICE);
         getWindow().setStatusBarColor(Color.BLACK);
         getWindow().setNavigationBarColor(Color.BLACK);
         buildUi();
+        loadPlaylist();
         startAndBind();
     }
 
@@ -97,7 +116,11 @@ public final class VideoPlayerActivity extends Activity {
         Uri newUri = intent.getData();
         if (newUri != null && !newUri.equals(uri)) {
             uri = newUri;
+            currentTitle = intent.getStringExtra("title");
+            if (currentTitle == null || currentTitle.isEmpty()) currentTitle = uri.getLastPathSegment();
+            if (titleView != null) titleView.setText(currentTitle);
             syncFavorite();
+            loadPlaylist();
             startPlayback();
         }
     }
@@ -109,7 +132,7 @@ public final class VideoPlayerActivity extends Activity {
     private void startPlayback() {
         Intent start = new Intent(this, PlaybackService.class);
         start.setAction(PlaybackService.ACTION_START).setData(uri)
-                .putExtra(PlaybackService.EXTRA_TITLE, getIntent().getStringExtra("title"));
+                .putExtra(PlaybackService.EXTRA_TITLE, currentTitle);
         try { startForegroundService(start); }
         catch (RuntimeException ex) {
             Toast.makeText(this, "Video playback could not start", Toast.LENGTH_LONG).show();
@@ -139,11 +162,11 @@ public final class VideoPlayerActivity extends Activity {
         back.setContentDescription("Back to videos");
         header.addView(back, new LinearLayout.LayoutParams(Ui.dp(this, 50), -1));
         back.setOnClickListener(v -> finish());
-        TextView title = Ui.text(this, getIntent().getStringExtra("title"), 16, Color.WHITE, true);
-        title.setSingleLine(true);
-        title.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        title.setGravity(Gravity.CENTER_VERTICAL);
-        header.addView(title, new LinearLayout.LayoutParams(0, -1, 1));
+        titleView = Ui.text(this, currentTitle, 16, Color.WHITE, true);
+        titleView.setSingleLine(true);
+        titleView.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        titleView.setGravity(Gravity.CENTER_VERTICAL);
+        header.addView(titleView, new LinearLayout.LayoutParams(0, -1, 1));
         favorite = ctrl("♡", 27);
         favorite.setContentDescription("Favorite");
         header.addView(favorite, new LinearLayout.LayoutParams(Ui.dp(this, 44), -1));
@@ -164,19 +187,78 @@ public final class VideoPlayerActivity extends Activity {
             @Override public void surfaceChanged(SurfaceHolder h, int format, int width, int height) { }
             @Override public void surfaceDestroyed(SurfaceHolder h) { surfaceReady = false; if (playback != null) playback.detach(h); }
         });
+        gestureHint = Ui.text(this, "", 18, Color.WHITE, true);
+        gestureHint.setGravity(Gravity.CENTER);
+        gestureHint.setBackground(Ui.bg(0xAA141822, 22, this));
+        gestureHint.setVisibility(View.GONE);
+        FrameLayout.LayoutParams hintParams = new FrameLayout.LayoutParams(Ui.dp(this, 176), Ui.dp(this, 56), Gravity.CENTER);
+        stage.addView(gestureHint, hintParams);
         GestureDetector gesture = new GestureDetector(this, new GestureDetector.SimpleOnGestureListener() {
-            @Override public boolean onDown(MotionEvent e) { return true; }
-            @Override public boolean onSingleTapConfirmed(MotionEvent e) { if (playback != null) playback.toggle(); return true; }
+            @Override public boolean onDown(MotionEvent e) {
+                gestureMode = 0;
+                scrubbingGesture = false;
+                dragStartPosition = playback == null ? 0 : playback.position();
+                dragTargetPosition = dragStartPosition;
+                WindowManager.LayoutParams w = getWindow().getAttributes();
+                initialBrightness = w.screenBrightness < 0 ? 0.55f : w.screenBrightness;
+                if (audio != null) {
+                    initialVolume = audio.getStreamVolume(AudioManager.STREAM_MUSIC);
+                    maxVolume = Math.max(1, audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC));
+                }
+                return true;
+            }
+            @Override public boolean onSingleTapConfirmed(MotionEvent e) {
+                if (playback != null && !scrubbingGesture) playback.toggle(); return true;
+            }
             @Override public boolean onDoubleTap(MotionEvent e) {
                 if (playback != null) {
                     int jump = e.getX() < surface.getWidth() / 2f ? -10000 : 10000;
                     playback.skip(jump);
-                    Toast.makeText(VideoPlayerActivity.this, jump < 0 ? "−10 seconds" : "+10 seconds", Toast.LENGTH_SHORT).show();
+                    showGestureHint(jump < 0 ? "−10 seconds" : "+10 seconds");
+                    handler.postDelayed(() -> { if (gestureHint != null && gestureMode == 0) gestureHint.setVisibility(View.GONE); }, 700);
+                }
+                return true;
+            }
+            @Override public boolean onScroll(MotionEvent start, MotionEvent current, float dx, float dy) {
+                if (start == null || current == null) return false;
+                float horizontal = current.getX() - start.getX();
+                float vertical = current.getY() - start.getY();
+                if (gestureMode == 0 && Math.max(Math.abs(horizontal), Math.abs(vertical)) >= Ui.dp(VideoPlayerActivity.this, 22)) {
+                    gestureMode = Math.abs(horizontal) > Math.abs(vertical) * 1.15f ? 1
+                            : (start.getX() < surface.getWidth() / 2f ? 2 : 3);
+                    scrubbingGesture = true;
+                }
+                if (gestureMode == 1 && playback != null) {
+                    // One full-width swipe seeks 90 seconds; show the exact new timestamp.
+                    long change = Math.round(horizontal / Math.max(1f, surface.getWidth()) * 90000.0);
+                    int dur = playback.duration();
+                    dragTargetPosition = (int)Math.max(0, Math.min(dur, (long)dragStartPosition + change));
+                    showGestureHint((change < 0 ? "−" : "+") + MediaRepository.duration(Math.abs(change))
+                            + "  ·  " + MediaRepository.duration(dragTargetPosition));
+                } else if (gestureMode == 2) {
+                    WindowManager.LayoutParams lp = getWindow().getAttributes();
+                    float b = Math.max(0.03f, Math.min(1f, initialBrightness - vertical / Math.max(1f, surface.getHeight())));
+                    lp.screenBrightness = b; getWindow().setAttributes(lp);
+                    showGestureHint("Brightness " + Math.round(b * 100) + "%");
+                } else if (gestureMode == 3 && audio != null) {
+                    int volume = Math.max(0, Math.min(maxVolume, Math.round(initialVolume - vertical / Math.max(1f,surface.getHeight()) * maxVolume)));
+                    try { audio.setStreamVolume(AudioManager.STREAM_MUSIC, volume, 0); } catch (SecurityException ignored) { }
+                    showGestureHint("Volume " + Math.round(100f * volume / maxVolume) + "%");
                 }
                 return true;
             }
         });
-        surface.setOnTouchListener((v,event) -> gesture.onTouchEvent(event));
+        surface.setOnTouchListener((v,event) -> {
+            boolean consumed = gesture.onTouchEvent(event);
+            if (event.getActionMasked() == MotionEvent.ACTION_UP || event.getActionMasked() == MotionEvent.ACTION_CANCEL) {
+                if (gestureMode == 1 && playback != null && event.getActionMasked() == MotionEvent.ACTION_UP) {
+                    playback.seekTo(dragTargetPosition);
+                }
+                if (gestureMode != 0) { gestureHint.setVisibility(View.GONE); gestureMode=0; }
+                return true;
+            }
+            return consumed;
+        });
 
         controls = new LinearLayout(this);
         controls.setOrientation(LinearLayout.VERTICAL);
@@ -207,6 +289,10 @@ public final class VideoPlayerActivity extends Activity {
         LinearLayout buttons = new LinearLayout(this);
         buttons.setGravity(Gravity.CENTER);
         controls.addView(buttons, new LinearLayout.LayoutParams(-1, Ui.dp(this, 64)));
+        TextView previous = ctrl("⏮", 25);
+        previous.setContentDescription("Previous video");
+        buttons.addView(previous, new LinearLayout.LayoutParams(0, -1, 1));
+        previous.setOnClickListener(v -> moveVideo(-1));
         TextView rewind = ctrl("−10", 17);
         rewind.setContentDescription("Rewind 10 seconds");
         buttons.addView(rewind, new LinearLayout.LayoutParams(0, -1, 1));
@@ -219,6 +305,10 @@ public final class VideoPlayerActivity extends Activity {
         forward.setContentDescription("Forward 10 seconds");
         buttons.addView(forward, new LinearLayout.LayoutParams(0, -1, 1));
         forward.setOnClickListener(v -> { if (playback != null) playback.skip(10000); });
+        TextView nextVideo = ctrl("⏭", 25);
+        nextVideo.setContentDescription("Next video");
+        buttons.addView(nextVideo, new LinearLayout.LayoutParams(0, -1, 1));
+        nextVideo.setOnClickListener(v -> moveVideo(1));
         TextView pip = ctrl("▣", 27);
         pip.setContentDescription("Floating mini-player");
         buttons.addView(pip, new LinearLayout.LayoutParams(0, -1, 1));
@@ -252,6 +342,62 @@ public final class VideoPlayerActivity extends Activity {
         status = Ui.text(this, "Ready", 11, 0xFFAAB1BE, false);
         status.setGravity(Gravity.CENTER);
         controls.addView(status, new LinearLayout.LayoutParams(-1, Ui.dp(this, 27)));
+    }
+
+    private void showGestureHint(String text) {
+        if (gestureHint == null) return;
+        gestureHint.setText(text);
+        gestureHint.setVisibility(View.VISIBLE);
+    }
+
+    private void loadPlaylist() {
+        // Visible media list is retained for within-app navigation. Also load all videos
+        // when opened from a separate Gallery process with an ACTION_VIEW intent.
+        final Uri opened = uri;
+        libraryWorker.submit(() -> {
+            List<MediaItem> candidates = new ArrayList<>();
+            if (!SelectionSession.videos.isEmpty()) candidates.addAll(SelectionSession.videos);
+            if (candidates.isEmpty() || !containsVideo(candidates, opened))
+                candidates = MediaRepository.load(getApplicationContext(), true);
+            List<MediaItem> result = candidates;
+            runOnUiThread(() -> {
+                if (isFinishing() || isDestroyed() || !opened.equals(uri)) return;
+                playlist.clear(); playlist.addAll(result);
+                playlistIndex = indexForUri(opened);
+                if (playlistIndex < 0) {
+                    // ACTION_VIEW may refer to a document supplied by another app.
+                    playlist.clear(); playlist.add(new MediaItem(opened, currentTitle,
+                            "", "", true, System.currentTimeMillis(), 0));
+                    playlistIndex = 0;
+                }
+            });
+        });
+    }
+    private static boolean containsVideo(List<MediaItem> items, Uri u) {
+        for (MediaItem item : items) if (u.equals(item.uri)) return true;
+        return false;
+    }
+    private int indexForUri(Uri u) {
+        for (int i=0; i<playlist.size(); i++) if (u.equals(playlist.get(i).uri)) return i;
+        return -1;
+    }
+    private void moveVideo(int offset) {
+        if (playlistIndex < 0 || playlist.isEmpty()) {
+            Toast.makeText(this, "Loading video playlist…", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        int index = playlistIndex + offset;
+        if (index < 0 || index >= playlist.size()) {
+            Toast.makeText(this, offset < 0 ? "First video" : "Last video", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        playlistIndex = index;
+        MediaItem next = playlist.get(index);
+        uri = next.uri;
+        currentTitle = next.title == null ? "Video" : next.title;
+        titleView.setText(currentTitle);
+        syncFavorite();
+        startPlayback();
     }
 
     private void showSpeedMenu() {
@@ -314,6 +460,7 @@ public final class VideoPlayerActivity extends Activity {
         super.onPause();
     }
     @Override protected void onDestroy() {
+        libraryWorker.shutdownNow();
         handler.removeCallbacks(ticker);
         if (playback != null && surfaceReady) playback.detach(surface.getHolder());
         if (bound) { unbindService(conn); bound = false; }
